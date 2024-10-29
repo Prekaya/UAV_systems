@@ -43,7 +43,8 @@ function out = uavsim_control(uu,P)
     Ve_hat       = estimates(12); % east speed, m/s
     Vd_hat       = estimates(13); % downward speed, m/s
     wn_hat       = estimates(14); % wind North, m/s
-    we_hat       = estimates(15); % wind East, m/s    
+    we_hat       = estimates(15); % wind East, m/s  
+    chi_hat = atan2(Ve_hat,Vn_hat);
     future_use   = estimates(16:23);
 
     
@@ -53,32 +54,41 @@ function out = uavsim_control(uu,P)
     delta_r=P.delta_r0;
     delta_t=P.delta_t0;
     
-    % Initialize autopilot commands (may be overwritten with autopilot logic)
-    phi_c = 45*pi/180;
-    theta_c = 0;
-
-    % Set "first-time" flag, which is used to initialize autopilot integrators
+    %% Set "first-time" flag, which is used to initialize autopilot integrators
     firstTime=(time==0);
 
-    % Flight control logic
-    %   <code goes here>
-    % e.g.
-    %    delta_e = PIR_pitch_hold(theta_c, theta_hat, q_hat, firstTime, P);
-
-    if mod(time,20)<10, h_c=50; else, h_c=50; end
-    P.altitude_kp = 0.06; % kp>0
-    P.altitude_ki = 0.02; % ki>0
-    P.altitude_kd = 0; % <-- Don’t use
-    theta_c = PIR_alt_hold_using_pitch(h_c, h_hat, 0, firstTime, P);
-
-    %theta_c = 20*pi/180;
-    P.pitch_kp = -6; % kp<0
-    P.pitch_ki = 0; % ki<=0
-    P.pitch_kd = -1; % kd<0
-    delta_e = PIR_pitch_hold(theta_c, theta_hat, q_hat, firstTime, P);
-    
+    %% Initialize autopilot commands (may be overwritten with autopilot logic)
+    % P.altitude_kp = 0.06; % kp>0
+    % P.altitude_ki = 0.02; % ki>0
+    % P.altitude_kd = 0; % <-- Don’t use
+    if mod(time,30)<10, h_c=100;else, h_c=50; end
+    if mod(time,20)<10, Va_c=13; else, Va_c=17; end
+    if mod(time,40)<10, chi_c=13; else, chi_c=17; end
+    %% Flight control logic
+    if(firstTime)
+    % Initialize integrators
+        PIR_pitch_hold(0,0,0,firstTime,P);
+        PIR_alt_hold_using_pitch(0,0,0,firstTime,P);
+        PIR_airspeed_hold_using_throttle(0,0,0,firstTime,P);
+        PIR_airspeed_hold_using_pitch(0,0,0,firstTime,P);
+    end
+    h_hold = 5; % m, alt threshold
+    if h_hat < h_c - h_hold % Climbing Mode
+        theta_c = PIR_airspeed_hold_using_pitch(Va_c, Va_hat, 0, firstTime, P);
+        delta_e = PIR_pitch_hold(theta_c, theta_hat, q_hat, firstTime, P);
+        delta_t = 1;
+    elseif h_hat > h_c + h_hold % Descending Mode
+        theta_c = PIR_airspeed_hold_using_pitch(Va_c, Va_hat, 0, firstTime, P);
+        delta_e = PIR_pitch_hold(theta_c, theta_hat, q_hat, firstTime, P);
+        delta_t = 0;
+    else % Altitude Hold
+        theta_c = PIR_alt_hold_using_pitch(h_c, h_hat, 0, firstTime, P);
+        delta_e = PIR_pitch_hold(theta_c, theta_hat, q_hat, firstTime, P);
+        delta_t = PIR_airspeed_hold_using_throttle(Va_c, Va_hat, 0, firstTime, P);
+    end
+    phi_c = PIR_course_hold(chi_c, chi_hat, r_hat, firstTime, P);
     delta_a = PIR_roll_hold(phi_c, phi_hat, p_hat, firstTime, P);
-    
+
     % Compile vector of control surface deflections
     delta = [ ...
             delta_e; ...
@@ -200,8 +210,8 @@ function u = PIR_alt_hold_using_pitch(h_c, h_hat, not_used, init_flag, P)
     kp = P.altitude_kp;
     ki = P.altitude_ki;
     kd = P.altitude_kd;
-    u_lower_limit = -P.theta_max;
-    u_upper_limit = +P.theta_max;
+    u_lower_limit = -P.theta_max/P.K_theta_DC;
+    u_upper_limit = +P.theta_max/P.K_theta_DC;
 
     % Initialize integrator (e.g. when t==0)
     persistent error_int;
@@ -230,8 +240,13 @@ function u = PIR_alt_hold_using_pitch(h_c, h_hat, not_used, init_flag, P)
     end
     
 end
- 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% roll_hold
+%   - regulate roll using aileron
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function u = PIR_roll_hold(phi_c, phi_hat, p_hat, init_flag, P)
+
 % Set up PI with rate feedback
     y_c = phi_c; % Command
     y = phi_hat; % Feedback
@@ -268,3 +283,131 @@ function u = PIR_roll_hold(phi_c, phi_hat, p_hat, init_flag, P)
         end
     end
 end
+
+function u = PIR_course_hold(chi_c, chi_hat, r_hat, init_flag, P)
+
+% Set up PI with rate feedback
+    y_c = chi_c; % Command
+    y = chi_hat; % Feedback
+    y_dot = r_hat; % Rate feedback
+    kp = P.course_kp;
+    ki = P.course_ki;
+    kd = P.course_kd;
+    u_lower_limit = -P.phi_max;
+    u_upper_limit = +P.phi_max;
+
+    % Initialize integrator (e.g. when t==0)
+    persistent error_int;
+    if( init_flag )   
+        error_int = 0;
+    end  
+
+    % Perform "PI with rate feedback"
+    error = mod(y_c - y+pi,2*pi)-pi;  % Error between command and response
+    error_int = error_int + P.Ts*error; % Update integrator
+    u = kp*error + ki*error_int - kd*y_dot;
+
+    % Output saturation & integrator clamping
+    %   - Limit u to u_upper_limit & u_lower_limit
+    %   - Clamp if error is driving u past limit
+    if u > u_upper_limit
+        u = u_upper_limit;
+        if ki*error>0
+            error_int = error_int - P.Ts*error;
+        end
+    elseif u < u_lower_limit
+        u = u_lower_limit;
+        if ki*error<0
+            error_int = error_int - P.Ts*error;
+        end
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% airspeed_hold_throttle
+%   - regulate airspeed using throttle
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function u = PIR_airspeed_hold_using_throttle(Va_c, Va_hat, not_used, init_flag, P)
+
+% Set up PI with rate feedback
+    y_c = Va_c; % Command
+    y = Va_hat; % Feedback
+    y_dot = 0; % Rate feedback
+    kp = P.airspeed_throttle_kp;
+    ki = P.airspeed_throttle_ki;
+    kd = P.airspeed_throttle_kd;
+    u_lower_limit = 0;
+    u_upper_limit = 1;
+
+    % Initialize integrator (e.g. when t==0)
+    persistent error_int;
+    if( init_flag )   
+        error_int = 0;
+    end  
+
+    % Perform "PI with rate feedback"
+    error = y_c - y;  % Error between command and response
+    error_int = error_int + P.Ts*error; % Update integrator
+    u = kp*error + ki*error_int - kd*y_dot;
+
+    % Output saturation & integrator clamping
+    %   - Limit u to u_upper_limit & u_lower_limit
+    %   - Clamp if error is driving u past limit
+    if u > u_upper_limit
+        u = u_upper_limit;
+        if ki*error>0
+            error_int = error_int - P.Ts*error;
+        end
+    elseif u < u_lower_limit
+        u = u_lower_limit;
+        if ki*error<0
+            error_int = error_int - P.Ts*error;
+        end
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% airspeed_hold_pitch
+%   - regulate airspeed using pitch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function u = PIR_airspeed_hold_using_pitch(Va_c, Va_hat, not_used, init_flag, P)
+
+% Set up PI with rate feedback
+    y_c = Va_c; % Command
+    y = Va_hat; % Feedback
+    y_dot = 0; % Rate feedback
+    kp = P.airspeed_pitch_kp;
+    ki = P.airspeed_pitch_kp;
+    kd = P.airspeed_pitch_kp;
+    u_lower_limit = -P.theta_max/P.K_theta_DC;
+    u_upper_limit = +P.theta_max/P.K_theta_DC;
+
+    % Initialize integrator (e.g. when t==0)
+    persistent error_int;
+    if( init_flag )   
+        error_int = 0;
+    end  
+
+    % Perform "PI with rate feedback"
+    error = y_c - y;  % Error between command and response
+    error_int = error_int + P.Ts*error; % Update integrator
+    u = kp*error + ki*error_int - kd*y_dot;
+
+    % Output saturation & integrator clamping
+    %   - Limit u to u_upper_limit & u_lower_limit
+    %   - Clamp if error is driving u past limit
+    if u > u_upper_limit
+        u = u_upper_limit;
+        if ki*error>0
+            error_int = error_int - P.Ts*error;
+        end
+    elseif u < u_lower_limit
+        u = u_lower_limit;
+        if ki*error<0
+            error_int = error_int - P.Ts*error;
+        end
+    end
+end
+
+
+
