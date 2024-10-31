@@ -47,9 +47,9 @@ function out = uavsim_sensors(uu, P)
     r     = x(12);  % body rate about z, rad/s
 
     % Gyro Measurements
-    p_gyro = 0; % rad/s
-    q_gyro = 0; % rad/s
-    r_gyro = 0; % rad/s
+    p_gyro = p  + P.sigma_noise_gyro*randn; % rad/s
+    q_gyro = q  + P.sigma_noise_gyro*randn; % rad/s
+    r_gyro = r  + P.sigma_noise_gyro*randn; % rad/s
 
     % Accelerometer Measurements
     ax_accel= 0; % m/s^2

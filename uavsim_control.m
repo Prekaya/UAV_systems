@@ -61,9 +61,13 @@ function out = uavsim_control(uu,P)
     % P.altitude_kp = 0.06; % kp>0
     % P.altitude_ki = 0.02; % ki>0
     % P.altitude_kd = 0; % <-- Don’t use
-    if mod(time,30)<10, h_c=100;else, h_c=50; end
-    if mod(time,20)<10, Va_c=13; else, Va_c=17; end
-    if mod(time,40)<10, chi_c=13; else, chi_c=17; end
+    if time<10,
+        h_c=50; Va_c=13; chi_c=0*pi/180;
+    elseif time<20
+        h_c=50; Va_c=13; chi_c=60*pi/180;
+    else
+        h_c=100; Va_c=15; chi_c=0*pi/180;
+    end
     %% Flight control logic
     if(firstTime)
     % Initialize integrators
