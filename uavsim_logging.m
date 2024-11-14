@@ -15,9 +15,9 @@
 function uavsim_logging(uu,P)
 
     % Logging flags
-    log_commands     = 0;
-    log_measurements = 0;
-    log_estimates    = 0;
+    log_commands     = 1;
+    log_measurements = 1;
+    log_estimates    = 1;
     
     % Extract variables from input vector uu
     %   uu = [x(1:); f_and_m(1:6); wind_ned(1:3); ap_cmds(1:9); estimates(1:23); meas(1:18); time(1)];
@@ -160,6 +160,11 @@ function uavsim_logging(uu,P)
         out.airspeed_pitot_mps(i) = estimates(4);
         out.roll_est_deg(i) = mod(estimates(5)*180/pi+180,360)-180; % Limit: -180 to 180
         out.pitch_est_deg(i) = estimates(6)*180/pi;
+        out.yaw_est_deg(i) = mod(estimates(7)*180/pi+180,360)-180;
+        out.p_est_dps(i) = estimates(8)*180/pi;
+        out.q_est_dps(i) = estimates(9)*180/pi;
+        out.r_est_dps(i) = estimates(10)*180/pi;
+        
     end
     
     % For profiling purposes

@@ -24,7 +24,7 @@ function models = compute_tf_models(P)
     %
     % Aileron channel coefficients and models
     %
-    L = P.Jx*P.Jz-P.Jxz^2
+    L = P.Jx*P.Jz-P.Jxz^2;
     models.a_phi1 = -((P.rho*P.Va0^2*P.S_wing*P.b)/2) * ((P.Jz*P.C_ell_p + P.Jxz*P.C_n_p)/L) * (P.b/(2*P.Va0));
     models.a_phi2 = ((P.rho*P.Va0^2*P.S_wing*P.b)/2) * ((P.Jz*P.C_ell_delta_a + P.Jxz*P.C_n_delta_a)/L);
 
@@ -49,7 +49,7 @@ function models = compute_tf_models(P)
     % Throttle channel coefficients and models
     %
 
-    models.a_V1 = ((P.rho*P.C_prop*P.S_prop)/P.mass)*(P.delta_t0*(1-2*P.delta_t0)*(P.k_motor-P.Va0) - P.delta_t0*P.Va0) + ((P.rho*P.Va0*P.S_wing)/P.mass)*(P.C_D_0+P.C_D_alpha*P.alpha0+P.C_D_delta_e*P.delta_e0);
+    models.a_V1 = -((P.rho*P.C_prop*P.S_prop)/P.mass)*(P.delta_t0*(1-2*P.delta_t0)*(P.k_motor-P.Va0) - P.delta_t0*P.Va0) + ((P.rho*P.Va0*P.S_wing)/P.mass)*(P.C_D_0+P.C_D_alpha*P.alpha0+P.C_D_delta_e*P.delta_e0);
     models.a_V2 = ((P.rho*P.C_prop*P.S_prop)/P.mass)*(P.k_motor - P.Va0)*(P.Va0+ 2*P.delta_t0*(P.k_motor-P.Va0));
     models.a_V3 = P.gravity*cos(P.theta0-P.alpha0);
 

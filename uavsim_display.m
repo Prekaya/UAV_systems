@@ -16,7 +16,7 @@ function uavsim_display(uu,P)
 
     % Plotting flags
     show_text = 1;
-    plot_commands = 0;
+    plot_commands = 1;
     plot_estimates= 0;
     
     % Extract variables from input vector uu

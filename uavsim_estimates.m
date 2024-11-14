@@ -70,33 +70,46 @@ function out = uavsim_estimates(uu,P)
     R = 8.31432;  % Universal gas constant for air, N-m/(mol-K)
     M = 0.0289644;% Standard molar mass of atmospheric air, kg/mol
     T = 5/9*(P.air_temp_F-32)+273.15; % Air temperature in Kelvin
-    h_baro = 0; % Altitude estimate using Baro altimeter, meters above h0_ASL
+    Plaunch = P0*exp((-M*P.gravity)/(R*T)*(P.h0_ASL));
+    h_baro = ((-R*T)/(M*P.gravity))*log(lpf_static_press/(Plaunch)); % Altitude estimate using Baro altimeter, meters above h0_ASL
 
     % Estimate airspeed from pitot tube differential pressure measurement
-    Va_pitot = 0; % Airspeed estimate using pitot tube, m/s
+    Va_pitot = sqrt((2*lpf_diff_press)/P.rho); % Airspeed estimate using pitot tube, m/s
 
     % EKF to estimate roll and pitch attitude
-    Q_att = []; % Continuous-time process noise matrix
-    R_att = []; % Measurement noise covariance matrix
+    sigma_ekfInitUncertainty_att = [5; 5]; % nx1 (units of states)
+    sigma_ekfProcessNoise_att = [P.sigma_noise_gyro; P.sigma_noise_gyro]; % nx1 (units of states)
+    sigma_ekfMeasNoise_att = [P.sigma_noise_accel; P.sigma_noise_accel; P.sigma_noise_accel];
+    Q_att = diag(sigma_ekfProcessNoise_att.^2); % Continuous-time process noise matrix
+    m_R_att = 15;
+    R_att = 10^m_R_att * diag(sigma_ekfMeasNoise_att.^2); % Measurement noise covariance matrix
     persistent xhat_att P_att
     if(time==0)
         xhat_att=[0;0]; % States: [phi; theta]
-        P_att=[];
+        P_att=diag(sigma_ekfInitUncertainty_att.^2);
     end
     N=10; % Number of sub-steps for propagation each sample period
     for i=1:N % Prediction step (N sub-steps)
-        f_att = []; % State derivatives, xdot = f(x,...)
-        A_att = []; % Linearization (Jacobian) of f(x,...) wrt x
-        xhat_att = [0;0]; % States propagated to sub-step N
-        P_att = []; % Covariance matrix propagated to sub-step N
+        phi_hat=xhat_att(1);
+        theta_hat=xhat_att(2);
+        f_att = [1 sin(phi_hat)*tan(theta_hat) cos(phi_hat)*tan(theta_hat);...
+                 0 cos(phi_hat), -sin(phi_hat)]*[p_gyro;q_gyro;r_gyro] + P.sigma_noise_gyro; % State derivatives, xdot = f(x,...)
+        A_att = [q_gyro*cos(phi_hat)*tan(theta_hat)-r_gyro*sin(phi_hat)*tan(theta_hat), (q_gyro*sin(phi_hat)+r_gyro*cos(phi_hat))*(1+tan(theta_hat)^2);...
+                 -q_gyro*sin(phi_hat)-r_gyro*cos(phi_hat), 0]; % Linearization (Jacobian) of f(x,...) wrt x
+        xhat_att = xhat_att + (P.Ts/N)*f_att; % States propagated to sub-step N
+        P_att = P_att + (P.Ts/N)*(A_att*P_att + P_att*A_att' + Q_att); % Covariance matrix propagated to sub-step N
         P_att = real(.5*P_att + .5*P_att'); % Make sure P stays real and symmetric
     end
-    y_att = []; % Vector of actual measurements
-    h_att = []; % Mathematical model of measurements based on xhat
-    C_att = []; % Linearization (Jacobian) of h(x,...) wrt x
-    L_att = []; % Kalman Gain matrix
-    P_att = [0 0; 0 0]; % Covariance matrix updated with measurement information
-    xhat_att = xhat_att; % States updated with measurement information
+    y_att = [p_gyro; q_gyro; r_gyro]; % Vector of actual measurements
+    h_att = [q_gyro*Va_pitot*sin(theta_hat)+ P.gravity*sin(theta_hat);
+             r_gyro*Va_pitot*cos(theta_hat)-p_gyro*Va_pitot*sin(theta_hat)-P.gravity*cos(theta_hat)*sin(phi_hat);...
+             -q_gyro*Va_pitot*cos(theta_hat)-P.gravity*cos(theta_hat)*cos(phi_hat)]; % Mathematical model of measurements based on xhat
+    C_att = [0, q_gyro*Va_pitot*cos(theta_hat)+P.gravity*cos(theta_hat);...
+             -P.gravity*cos(phi_hat)*cos(theta_hat), -r_gyro*Va_pitot*sin(theta_hat)-p_gyro*Va_pitot*cos(theta_hat)+P.gravity*sin(phi_hat)*sin(theta_hat);...
+             P.gravity*sin(phi_hat)*cos(theta_hat), q_gyro*Va_pitot*sin(theta_hat)+P.gravity*cos(phi_hat)*sin(theta_hat)]; % Linearization (Jacobian) of h(x,...) wrt x
+    L_att = (P_att*C_att')/(C_att*P_att*C_att' + R_att); % Kalman Gain matrix
+    P_att = (eye(length(xhat_att)) - L_att*C_att)*P_att; % Covariance matrix updated with measurement information
+    xhat_att = xhat_att + L_att*(y_att-h_att); % States updated with measurement information
     xhat_att = mod(xhat_att+pi,2*pi)-pi; % xhat_att are attitudes, make sure they stay within +/-180degrees 
     phi_hat_unc   = sqrt(P_att(1,1)); % EKF-predicted uncertainty in phi estimate, rad 
     theta_hat_unc = sqrt(P_att(2,2)); % EKF-predicted uncertainty in theta estimate, rad 
@@ -106,14 +119,14 @@ function out = uavsim_estimates(uu,P)
     % estimate states
     pn_hat    = 0;
     pe_hat    = 0;
-    h_hat     = 0;
-    Va_hat    = 0;
-    phi_hat   = 0;
-    theta_hat = 0;
-    psi_hat   = 0;
-    p_hat     = 0;
-    q_hat     = 0;
-    r_hat     = 0;
+    h_hat     = h_baro;
+    Va_hat    = Va_pitot;
+    phi_hat   = xhat_att(1);
+    theta_hat = xhat_att(2);
+    psi_hat   = lpf_psi_mag;
+    p_hat     = lpf_p_gyro;
+    q_hat     = lpf_q_gyro;
+    r_hat     = lpf_r_gyro;
     Vn_hat    = 0;
     Ve_hat    = 0;
     Vd_hat    = 0;
@@ -156,7 +169,7 @@ function y = LPF(u,yPrev,tau,Ts)
 %  U(s)     s + a     tau*s + 1         ( tau = 1/a )
 %
 
-alpha_LPF = 0;
-y = 0;
+alpha_LPF = exp(-Ts/tau);
+y = alpha_LPF*yPrev + (1-alpha_LPF)*u;
 
 end
