@@ -158,12 +158,14 @@ function uavsim_logging(uu,P)
     if log_estimates
         out.alt_baro_m(i)         = estimates(3);
         out.airspeed_pitot_mps(i) = estimates(4);
-        out.roll_est_deg(i) = mod(estimates(5)*180/pi+180,360)-180; % Limit: -180 to 180
+        out.roll_est_deg(i) = mod(rad2deg(estimates(5))+180,360)-180; % Limit: -180 to 180
         out.pitch_est_deg(i) = estimates(6)*180/pi;
-        out.yaw_est_deg(i) = mod(estimates(7)*180/pi+180,360)-180;
+        out.yaw_est_deg(i) = mod(rad2deg(estimates(7))+180,360)-180;
         out.p_est_dps(i) = estimates(8)*180/pi;
         out.q_est_dps(i) = estimates(9)*180/pi;
         out.r_est_dps(i) = estimates(10)*180/pi;
+        out.phi_hat_unc(i) = estimates(16);
+        out.theta_hat_unc(i) = estimates(17);
         
     end
     

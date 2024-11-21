@@ -27,29 +27,25 @@ function out = uavsim_trajectory_control(uu)
     chi_hat = atan2(Ve_hat,Vn_hat);
     future_use   = estimates(16:23);
     
-    persistent Va_c
-    persistent wp
-    persistent h_c
-    persistent chi_c
-    
-
+    persistent kWP
     if(time==0)
-        wp = 1;
+        kWP = 1;
     end
 
     % Extract variables from traj_cmds
-    pcur = [pn_hat; pe_hat];
-    pgoal = [wp_north(wp); wp_east(wp)];
-    d = norm(pcur - pgoal);
-    if d<20
-        if wp==length(wp_east)
-            wp=1;
-        else
-            wp = wp+1;
+    dist_to_wp = sqrt((wp_east(kWP)-pe_hat)^2 + (wp_north(kWP)-pn_hat)^2);
+    dist_to_wp_threshold=20;
+
+    if( dist_to_wp < dist_to_wp_threshold )
+        kWP=kWP+1;
+        if kWP>length(wp_east)
+            kWP=1;
         end
     end
-    Va_c     = wp_speed(wp);  % commanded airspeed (m/s)
-    h_c      = wp_alt(wp);  % commanded altitude (m)
-    chi_c    = atan2(wp_east(wp)-pe_hat,wp_north(wp)-pn_hat);  % commanded course (rad)
+
+    % Set waypoint leg commands
+    chi_c = atan2(wp_east(kWP)-pe_hat,wp_north(kWP)-pn_hat);
+    h_c = wp_alt(kWP);
+    Va_c = wp_speed(kWP);
     out=[Va_c;h_c;chi_c];
 end

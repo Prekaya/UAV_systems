@@ -34,9 +34,9 @@ function P = compute_autopilot_gains(models,P)
         P.roll_ki = 0;
 
     %% select gains for course loop
-        % Roll Loop Design Parameters
-        zeta_course = 0.7; % Roll loop damping coefficient
-        W_x = 4;
+        % Course Loop Design Parameters
+        zeta_course = 4; % Roll loop damping coefficient
+        W_x = 40;
         W_n_course = w_n_phi/W_x;
         P.course_kp = (2*zeta_course*W_n_course*P.Va0)/P.gravity;
         P.course_ki = (W_n_course^2*P.Va0)/P.gravity;
@@ -49,7 +49,7 @@ function P = compute_autopilot_gains(models,P)
     %% select gains for the pitch loop, including DC gain
     % Pitch Loop Design Parameters
        e_theta_max = deg2rad(30); % rad, Amount of roll error which causes saturation
-       zeta_theta = 0.9; % Roll loop damping coefficient
+       zeta_theta = 0.9; % Pitch loop damping coefficient
        
        P.pitch_kp = (P.delta_e_max/e_theta_max) * sign(models.a_theta3);
        w_n_theta = sqrt(models.a_theta2+P.pitch_kp*models.a_theta3);
@@ -59,8 +59,8 @@ function P = compute_autopilot_gains(models,P)
 
     %% select gains for altitude loop
     % Altitude Loop Design Parameters
-       zeta_altitude = 0.8; % Roll loop damping coefficient
-       W_h = 28;
+       zeta_altitude = 1; % Alt loop damping coefficient
+       W_h = 30;
        w_n_altitude = w_n_theta/W_h;
        P.altitude_kp = (2*zeta_altitude*w_n_altitude)/(P.K_theta_DC*P.Va0);
        P.altitude_ki = w_n_altitude^2/(P.K_theta_DC*P.Va0);

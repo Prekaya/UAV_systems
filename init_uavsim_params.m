@@ -45,11 +45,11 @@ function P = init_uavsim_params
     P.sigma_wz = 0.7;    % Dryden intensity along body z, m/s
 
     % control limit parameters
-    P.delta_e_max =  45*pi/180;  % Max allowable elevator deflection, rad
-    P.delta_a_max =  45*pi/180;  % Max allowable aileron deflection, rad
-    P.delta_r_max =  45*pi/180;  % Max allowable rudder deflection, rad
-    P.theta_max   =  20*pi/180;  % Max allowable pitch command, rad
-    P.phi_max     =  45*pi/180;  % Max allowable roll command, rad
+    P.delta_e_max =  deg2rad(45);  % Max allowable elevator deflection, rad
+    P.delta_a_max =  deg2rad(45);  % Max allowable aileron deflection, rad
+    P.delta_r_max =  deg2rad(45);  % Max allowable rudder deflection, rad
+    P.theta_max   =  deg2rad(20);  % Max allowable pitch command, rad
+    P.phi_max     =  deg2rad(45);  % Max allowable roll command, rad
     
     % specify nominal airspeed & launch height
     P.Va0   = 13;   % nominal airspeed, m/s (used for launch speed and autopilot design)
@@ -86,7 +86,7 @@ function P = init_uavsim_params
     %
 
     % Sensor parameters: Gyro and Accelerometer
-    P.sigma_noise_gyro = .015*sqrt(80)*pi/180; % rad/s
+    P.sigma_noise_gyro = deg2rad(0.015*sqrt(80)); % rad/s
     P.sigma_noise_accel = 250*sqrt(100)/1e6*P.gravity; % m/s^2
 
     % Sensor parameters: Pressure Sensors
@@ -97,8 +97,8 @@ function P = init_uavsim_params
     P.sigma_noise_diff_press = 0.002*kPa_to_Npm2; % Differential pressure measurement noise std. dev., N/m^2
 
     % Sensor parameters: Magnetometer
-    P.sigma_bias_mag = 1*pi/180; % Magnetometer bias std. dev., rad
-    P.sigma_noise_mag = 0.3*pi/180; % Magnetometer noise std. dev., rad
+    P.sigma_bias_mag = deg2rad(1); % Magnetometer bias std. dev., rad
+    P.sigma_noise_mag = deg2rad(0.3); % Magnetometer noise std. dev., rad
 
     % Sensor parameters: GPS
     P.Ts_gps = 1; % GPS sampling time, s

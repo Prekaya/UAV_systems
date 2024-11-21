@@ -65,61 +65,164 @@ function out = uavsim_estimates(uu,P)
     lpf_r_gyro = LPF(r_gyro,lpf_r_gyro,P.tau_gyro,P.Ts);
     lpf_psi_mag = LPF(psi_mag,lpf_psi_mag,P.tau_mag,P.Ts);
     
+    
     % Estimate barometric altitude from static pressure
     P0 = 101325;  % Standard pressure at sea level, N/m^2
     R = 8.31432;  % Universal gas constant for air, N-m/(mol-K)
     M = 0.0289644;% Standard molar mass of atmospheric air, kg/mol
+    g = P.gravity;
     T = 5/9*(P.air_temp_F-32)+273.15; % Air temperature in Kelvin
-    Plaunch = P0*exp((-M*P.gravity)/(R*T)*(P.h0_ASL));
-    h_baro = ((-R*T)/(M*P.gravity))*log(lpf_static_press/(Plaunch)); % Altitude estimate using Baro altimeter, meters above h0_ASL
-
+    Plaunch = P0*exp((-M*g)/(R*T)*(P.h0_ASL));
+    h_baro = ((-R*T)/(M*g))*log(lpf_static_press/(Plaunch)); % Altitude estimate using Baro altimeter, meters above h0_ASL
+    
     % Estimate airspeed from pitot tube differential pressure measurement
     Va_pitot = sqrt((2*lpf_diff_press)/P.rho); % Airspeed estimate using pitot tube, m/s
-
+%%
     % EKF to estimate roll and pitch attitude
-    sigma_ekfInitUncertainty_att = [5; 5]; % nx1 (units of states)
+    
+    Va = Va_pitot;
+    sigma_ekfInitUncertainty_att = deg2rad([5; 5]); % nx1 (units of states)
     sigma_ekfProcessNoise_att = [P.sigma_noise_gyro; P.sigma_noise_gyro]; % nx1 (units of states)
     sigma_ekfMeasNoise_att = [P.sigma_noise_accel; P.sigma_noise_accel; P.sigma_noise_accel];
-    Q_att = diag(sigma_ekfProcessNoise_att.^2); % Continuous-time process noise matrix
-    m_R_att = 15;
-    R_att = 10^m_R_att * diag(sigma_ekfMeasNoise_att.^2); % Measurement noise covariance matrix
+    m_R_att = 5;
     persistent xhat_att P_att
     if(time==0)
-        xhat_att=[0;0]; % States: [phi; theta]
-        P_att=diag(sigma_ekfInitUncertainty_att.^2);
+        xhat_att=[0;0]; % States: [phi_hat; theta]
+        P_att=diag(sigma_ekfInitUncertainty_att.^2);  % nxn (Initial P)
     end
+    Q_att = diag(sigma_ekfProcessNoise_att.^2); % nxn
+    R_att = 10^m_R_att * diag(sigma_ekfMeasNoise_att.^2); % mxm Measurement noise covariance matrix   
+
     N=10; % Number of sub-steps for propagation each sample period
     for i=1:N % Prediction step (N sub-steps)
-        phi_hat=xhat_att(1);
-        theta_hat=xhat_att(2);
-        f_att = [1 sin(phi_hat)*tan(theta_hat) cos(phi_hat)*tan(theta_hat);...
-                 0 cos(phi_hat), -sin(phi_hat)]*[p_gyro;q_gyro;r_gyro] + P.sigma_noise_gyro; % State derivatives, xdot = f(x,...)
-        A_att = [q_gyro*cos(phi_hat)*tan(theta_hat)-r_gyro*sin(phi_hat)*tan(theta_hat), (q_gyro*sin(phi_hat)+r_gyro*cos(phi_hat))*(1+tan(theta_hat)^2);...
-                 -q_gyro*sin(phi_hat)-r_gyro*cos(phi_hat), 0]; % Linearization (Jacobian) of f(x,...) wrt x
+        phi   = xhat_att(1);
+        theta = xhat_att(2);
+        f_att=[p_gyro+q_gyro*sin(phi)*tan(theta)+r_gyro*cos(phi)*tan(theta); ... % Define f
+               q_gyro*cos(phi)-r_gyro*sin(phi)];
+
+        A_att = [q_gyro*cos(phi)*tan(theta)-r_gyro*sin(phi)*tan(theta), (q_gyro*sin(phi) + r_gyro*cos(phi))*(1+ tan(theta)^2);...
+                -r_gyro*cos(phi)-q_gyro*sin(phi),                              0]; % Linearization (Jacobian) of f(x,...) wrt x
+        
         xhat_att = xhat_att + (P.Ts/N)*f_att; % States propagated to sub-step N
-        P_att = P_att + (P.Ts/N)*(A_att*P_att + P_att*A_att' + Q_att); % Covariance matrix propagated to sub-step N
+        
+        % Covariance matrix propagated to sub-step N
+        P_att = P_att + P.Ts/N*(A_att*P_att + P_att*A_att' + Q_att); % Covariance matrix propagated to sub-step N
         P_att = real(.5*P_att + .5*P_att'); % Make sure P stays real and symmetric
     end
-    y_att = [p_gyro; q_gyro; r_gyro]; % Vector of actual measurements
-    h_att = [q_gyro*Va_pitot*sin(theta_hat)+ P.gravity*sin(theta_hat);
-             r_gyro*Va_pitot*cos(theta_hat)-p_gyro*Va_pitot*sin(theta_hat)-P.gravity*cos(theta_hat)*sin(phi_hat);...
-             -q_gyro*Va_pitot*cos(theta_hat)-P.gravity*cos(theta_hat)*cos(phi_hat)]; % Mathematical model of measurements based on xhat
-    C_att = [0, q_gyro*Va_pitot*cos(theta_hat)+P.gravity*cos(theta_hat);...
-             -P.gravity*cos(phi_hat)*cos(theta_hat), -r_gyro*Va_pitot*sin(theta_hat)-p_gyro*Va_pitot*cos(theta_hat)+P.gravity*sin(phi_hat)*sin(theta_hat);...
-             P.gravity*sin(phi_hat)*cos(theta_hat), q_gyro*Va_pitot*sin(theta_hat)+P.gravity*cos(phi_hat)*sin(theta_hat)]; % Linearization (Jacobian) of h(x,...) wrt x
-    L_att = (P_att*C_att')/(C_att*P_att*C_att' + R_att); % Kalman Gain matrix
-    P_att = (eye(length(xhat_att)) - L_att*C_att)*P_att; % Covariance matrix updated with measurement information
-    xhat_att = xhat_att + L_att*(y_att-h_att); % States updated with measurement information
+    phi   = xhat_att(1);
+    theta = xhat_att(2);
+    ymeas_att = [ax_accel; ay_accel; az_accel]; % Vector of actual measurements
+    
+    % Mathematical model of measurements based on xhat: yhat=h(xhat,...)
+    h_att = [q_gyro*Va*sin(theta)+g*sin(theta);
+             r_gyro*Va*cos(theta)-p_gyro*Va*sin(theta)-g*cos(theta)*sin(phi);...
+             -q_gyro*Va*cos(theta)-g*cos(theta)*cos(phi)]; % Mathematical model of measurements based on xhat
+    
+    % Define C: Linearization (Jacobian) of h(xhat,...) wrt xhat (mxn matrix)
+    C_att = [                             0,       g*cos(theta)+Va*q_gyro*cos(theta);
+            -g*cos(phi)*cos(theta), g*sin(phi)*sin(theta)-Va*r_gyro*sin(theta)-Va*p_gyro*cos(theta);
+             g*cos(theta)*sin(phi),         Va*q_gyro*sin(theta)+g*cos(phi)*sin(theta)];% Linearization (Jacobian) of h(x,...) wrt x
+    
+    % Kalman Gain matrix, nxm
+    % L: weightings to map measurement residuals into state estimates
+    L_att = (P_att*C_att')*inv(C_att*P_att*C_att' + R_att);
+    
+    % Covariance matrix updated with measurement information
+    I_att = eye(size(P_att));
+    P_att = (I_att - L_att*C_att)*P_att; 
+    P_att = real(.5*P_att + .5*P_att'); % Make sure P stays real and symmetric
+    xhat_att = xhat_att + L_att*(ymeas_att-h_att); % States updated with measurement information
     xhat_att = mod(xhat_att+pi,2*pi)-pi; % xhat_att are attitudes, make sure they stay within +/-180degrees 
-    phi_hat_unc   = sqrt(P_att(1,1)); % EKF-predicted uncertainty in phi estimate, rad 
-    theta_hat_unc = sqrt(P_att(2,2)); % EKF-predicted uncertainty in theta estimate, rad 
+    phi_hat   = xhat_att(1);
+    theta_hat = xhat_att(2);
+    phi_unc   = sqrt(P_att(1,1)); % EKF-predicted uncertainty in phi estimate, rad 
+    theta_unc = sqrt(P_att(2,2)); % EKF-predicted uncertainty in theta estimate, rad 
+
+ %%
+ % EKF to estimate gps position
+    sigma_ekfInitUncertainty_gps = [P.sigma_eta_gps_north; P.sigma_eta_gps_east; P.sigma_eta_gps_alt; P.sigma_noise_gps_speed; P.sigma_noise_gps_speed; P.sigma_noise_gps_speed]; % nx1 (units of states)
+    sigma_ekfProcessNoise_gps = [0.5 0.5 0.5 0.5 0.5 0.5]; % nx1 (units of states)
+    sigma_ekfMeasNoise_gps = [2 2 2 .1 .1 .1];
+    persistent xhat_gps P_gps pn_gps_old pe_gps_old meas_available
+    if(time==0)
+        xhat_gps=[pn_gps; pe_gps; -alt_gps; Vn_gps; Ve_gps; Vd_gps]; % States: [pn; pe; pd; vn; ve; vd]
+        pn_gps_old = pn_gps;
+        pe_gps_old = pe_gps;
+        meas_available = 1;
+        P_gps=diag(sigma_ekfInitUncertainty_gps.^2);  % nxn (Initial P)
+    end
+    Q_gps = diag(sigma_ekfProcessNoise_gps.^2); % nxn
+    R_gps = diag(sigma_ekfMeasNoise_gps.^2); % mxm Measurement noise covariance matrix   
+
+    N=10; % Number of sub-steps for propagation each sample period
+    for i=1:N % Prediction step (N sub-steps)
+        pn_hat=xhat_gps(1);
+        pe_hat=xhat_gps(2);
+        pd_hat=xhat_gps(3);
+        vn_hat=xhat_gps(4);
+        ve_hat=xhat_gps(5);
+        vd_hat=xhat_gps(6);
+        
+        R_ned2b = eulerToRotationMatrix(phi_hat,theta_hat,psi_mag);
+        % NED Position EoMs
+        bottom = R_ned2b*[ax_accel; ay_accel; az_accel] + [0; 0; g];
+        f_gps = [vn_hat; ve_hat; vd_hat; bottom];
+
+        A_gps = [0, 0, 0, 1, 0, 0;
+                 0, 0, 0, 0, 1, 0;
+                 0, 0, 0, 0, 0, 1;
+                 0, 0, 0, 0, 0, 0;
+                 0, 0, 0, 0, 0, 0;
+                 0, 0, 0, 0, 0, 0]; % Linearization (Jacobian) of f(x,...) wrt x
+        
+        xhat_gps = xhat_gps + (P.Ts/N)*f_gps; % States propagated to sub-step N
+        
+        % Covariance matrix propagated to sub-step N
+        P_gps = P_gps + (P.Ts/N)*(A_gps*P_gps + P_gps*A_gps' + Q_gps); % Covariance matrix propagated to sub-step N
+        P_gps = real(.5*P_gps + .5*P_gps'); % Make sure P stays real and symmetric
+    end
+    pn_hat=xhat_gps(1);
+    pe_hat=xhat_gps(2);
+    pd_hat=xhat_gps(3);
+    vn_hat=xhat_gps(4);
+    ve_hat=xhat_gps(5);
+    vd_hat=xhat_gps(6);
+
+    ymeas_gps =  [pn_gps; pe_gps; -alt_gps; Vn_gps; Ve_gps; Vd_gps]; % Vector of actual measurements
+    if (pn_gps ~= pn_gps_old) || (pe_gps~=pe_gps_old)
+        pn_gps_old = pn_gps;
+        pe_gps_old = pe_gps;
+        meas_available = 1;
+    end
+
+    if meas_available
+        % Mathematical model of measurements based on xhat: yhat=h(xhat,...)
+        h_gps = [pn_hat; pe_hat; pd_hat; vn_hat; ve_hat; vd_hat]; % Mathematical model of measurements based on xhat
+        
+        % Define C: Linearization (Jacobian) of h(xhat,...) wrt xhat (mxn matrix)
+        C_gps = eye(6); % Linearization (Jacobian) of h(x,...) wrt x
+        
+        % Kalman Gain matrix, nxm
+        % L: weightings to map measurement residuals into state estimates
+        L_gps = (P_gps*C_gps')/(C_gps*P_gps*C_gps' + R_gps);
+    
+        xhat_gps = xhat_gps + L_gps*(ymeas_gps-h_gps); % States updated with measurement information
+       
+        % Covariance matrix updated with measurement information
+        I_gps = eye(length(xhat_gps));
+        P_gps = (I_gps - L_gps*C_gps)*P_gps; 
+        P_gps = real(.5*P_gps + .5*P_gps'); % Make sure P stays real and symmetric
+        meas_available = 0;
+    end
+    %phi_unc   = sqrt(P_gps(1,1)); % EKF-predicted uncertainty in phi estimate, rad 
+    %theta_unc = sqrt(P_gps(2,2)); % EKF-predicted uncertainty in theta estimate, rad 
+    %%
 
     % Use GPS for NE position, and ground velocity vector
-    
     % estimate states
-    pn_hat    = 0;
-    pe_hat    = 0;
-    h_hat     = h_baro;
+    pn_hat    = xhat_gps(1);
+    pe_hat    = xhat_gps(2);
+    h_hat     = xhat_gps(3);
     Va_hat    = Va_pitot;
     phi_hat   = xhat_att(1);
     theta_hat = xhat_att(2);
@@ -127,9 +230,9 @@ function out = uavsim_estimates(uu,P)
     p_hat     = lpf_p_gyro;
     q_hat     = lpf_q_gyro;
     r_hat     = lpf_r_gyro;
-    Vn_hat    = 0;
-    Ve_hat    = 0;
-    Vd_hat    = 0;
+    Vn_hat    = xhat_gps(4);
+    Ve_hat    = xhat_gps(5);
+    Vd_hat    = xhat_gps(6);
     wn_hat    = 0;
     we_hat    = 0;
     
@@ -150,8 +253,8 @@ function out = uavsim_estimates(uu,P)
             Vd_hat;...    % 13
             wn_hat;...    % 14
             we_hat;...    % 15
-            phi_hat_unc;...   % 16
-            theta_hat_unc;... % 17
+            phi_unc;...   % 16
+            theta_unc;... % 17
             0; % future use
             0; % future use
             0; % future use
@@ -163,13 +266,13 @@ function out = uavsim_estimates(uu,P)
 end 
 
 function y = LPF(u,yPrev,tau,Ts)
-%
-%  Y(s)       a           1
-% ------ = ------- = -----------,  tau: Filter time contsant, s
-%  U(s)     s + a     tau*s + 1         ( tau = 1/a )
-%
-
-alpha_LPF = exp(-Ts/tau);
-y = alpha_LPF*yPrev + (1-alpha_LPF)*u;
+    %
+    %  Y(s)       a           1
+    % ------ = ------- = -----------,  tau: Filter time contsant, s
+    %  U(s)     s + a     tau*s + 1         ( tau = 1/a )
+    %
+    
+    alpha_LPF = exp(-Ts/tau);
+    y = alpha_LPF*yPrev + (1-alpha_LPF)*u;
 
 end

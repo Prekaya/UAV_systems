@@ -61,13 +61,13 @@ function out = uavsim_control(uu,P)
     % P.altitude_kp = 0.06; % kp>0
     % P.altitude_ki = 0.02; % ki>0
     % P.altitude_kd = 0; % <-- Don’t use
-    if time<10,
-        h_c=50; Va_c=13; chi_c=0*pi/180;
-    elseif time<20
-        h_c=50; Va_c=13; chi_c=60*pi/180;
-    else
-        h_c=100; Va_c=15; chi_c=0*pi/180;
-    end
+    % if time<10,
+    %     h_c=50; Va_c=13; chi_c=0*pi/180;
+    % elseif time<20
+    %     h_c=50; Va_c=13; chi_c=60*pi/180;
+    % else
+    %     h_c=100; Va_c=15; chi_c=0*pi/180;
+    % end
     %% Flight control logic
     if(firstTime)
     % Initialize integrators
@@ -307,7 +307,7 @@ function u = PIR_course_hold(chi_c, chi_hat, r_hat, init_flag, P)
     end  
 
     % Perform "PI with rate feedback"
-    error = mod(y_c - y+pi,2*pi)-pi;  % Error between command and response
+    error = mod(y_c-y+pi,2*pi)-pi;  % Error between command and response
     error_int = error_int + P.Ts*error; % Update integrator
     u = kp*error + ki*error_int - kd*y_dot;
 
