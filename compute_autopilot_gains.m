@@ -53,34 +53,34 @@ function P = compute_autopilot_gains(models,P)
        
        P.pitch_kp = (P.delta_e_max/e_theta_max) * sign(models.a_theta3);
        w_n_theta = sqrt(models.a_theta2+P.pitch_kp*models.a_theta3);
-       P.pitch_ki = 0;
        P.pitch_kd = (2*zeta_theta*w_n_theta - models.a_theta1)/models.a_theta3;
+       P.pitch_ki = 0;
        P.K_theta_DC = (P.pitch_kp*models.a_theta3)/(models.a_theta2 + P.pitch_kp*models.a_theta3);
 
     %% select gains for altitude loop
     % Altitude Loop Design Parameters
-       zeta_altitude = 1; % Alt loop damping coefficient
-       W_h = 30;
+       zeta_altitude = 2.1; % Alt loop damping coefficient
+       W_h = 100;
        w_n_altitude = w_n_theta/W_h;
        P.altitude_kp = (2*zeta_altitude*w_n_altitude)/(P.K_theta_DC*P.Va0);
        P.altitude_ki = w_n_altitude^2/(P.K_theta_DC*P.Va0);
        P.altitude_kd = 0;
 
     %% airspeed hold using throttle
-       zeta_airspeed = 1;
-       W_v = 40;
-       w_n_airspeed = w_n_theta/W_v;
+       zeta_V = 1;
+       W_V = 40;
+       w_n_V = w_n_theta/W_V;
 
-       P.airspeed_throttle_kp = (2*zeta_airspeed*w_n_airspeed - models.a_V1)/models.a_V2;
-       P.airspeed_throttle_ki = w_n_airspeed^2/models.a_V2;
+       P.airspeed_throttle_kp = (2*zeta_V*w_n_V - models.a_V1)/models.a_V2;
+       P.airspeed_throttle_ki = w_n_V^2/models.a_V2;
        P.airspeed_throttle_kd = 0;
 
     %% airspeed hold using pitch
-       zeta_airspeed2 = 1;
-       W_v2 = 40;
-       w_n_airspeed2 = w_n_theta/W_v2;
+       zeta_V2 = 1;
+       W_V2 = 40;
+       w_n_V2 = w_n_theta/W_V2;
        
-       P.airspeed_pitch_kp = (models.a_V1 - 2*zeta_airspeed2*w_n_airspeed2)/(P.K_theta_DC*P.gravity);
-       P.airspeed_pitch_ki = -w_n_airspeed2^2/(P.K_theta_DC*P.gravity);
+       P.airspeed_pitch_kp = (models.a_V1 - 2*zeta_V2*w_n_V2)/(P.K_theta_DC*P.gravity);
+       P.airspeed_pitch_ki = -w_n_V2^2/(P.K_theta_DC*P.gravity);
        P.airspeed_pitch_kd = 0;
 end

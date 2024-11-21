@@ -1,13 +1,13 @@
-
-figure()
-plot(out.time_s,out.pitch_deg)
-hold on
-plot(out.time_s,out.pitch_est_deg)
-legend('Pitch\_deg','Pitch\_est\_deg')
-xlabel('Time (s)');
-ylabel('Pitch (deg)');
-title('Pitch Compare');
-
+% 
+% figure()
+% plot(out.time_s,out.pitch_deg)
+% hold on
+% plot(out.time_s,out.pitch_est_deg)
+% legend('Pitch\_deg','Pitch\_est\_deg')
+% xlabel('Time (s)');
+% ylabel('Pitch (deg)');
+% title('Pitch Compare');
+% 
 figure()
 plot(out.time_s,out.roll_deg)
 hold on
@@ -17,9 +17,13 @@ xlabel('Time (s)');
 ylabel('Roll (deg)');
 title('Roll Compare');
 
-% figure()
-% plot(out.time_s, out.pitch_est_deg-out.pitch_deg, ...
-% out.time_s, +out.theta_hat_unc, out.time_s, -out.theta_hat_unc)
+figure()
+plot(out.time_s, deg2rad(out.pitch_est_deg-out.pitch_deg), ...
+out.time_s, +out.theta_hat_unc, out.time_s, -out.theta_hat_unc)
+
+figure()
+plot(out.time_s, deg2rad(out.roll_est_deg-out.roll_deg), ...
+out.time_s, +out.phi_hat_unc, out.time_s, -out.phi_hat_unc)
 
 % figure()
 % plot(out.time_s,out.alt_m)
