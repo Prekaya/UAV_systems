@@ -84,7 +84,7 @@ function out = uavsim_estimates(uu,P)
     sigma_ekfInitUncertainty_att = deg2rad([5; 5]); % nx1 (units of states)
     sigma_ekfProcessNoise_att = [P.sigma_noise_gyro; P.sigma_noise_gyro]; % nx1 (units of states)
     sigma_ekfMeasNoise_att = [P.sigma_noise_accel; P.sigma_noise_accel; P.sigma_noise_accel];
-    m_R_att = 5;
+    m_R_att = 3;%5 original
     persistent xhat_att P_att
     if(time==0)
         xhat_att=[0;0]; % States: [phi_hat; theta]
@@ -111,7 +111,7 @@ function out = uavsim_estimates(uu,P)
     end
     phi   = xhat_att(1);
     theta = xhat_att(2);
-    ymeas_att = [ax_accel; ay_accel; az_accel]; % Vector of actual measurements
+    y_att = [ax_accel; ay_accel; az_accel]; % Vector of actual measurements
     
     % Mathematical model of measurements based on xhat: yhat=h(xhat,...)
     h_att = [q_gyro*Va*sin(theta)+g*sin(theta);
@@ -127,11 +127,16 @@ function out = uavsim_estimates(uu,P)
     % L: weightings to map measurement residuals into state estimates
     L_att = (P_att*C_att')/(C_att*P_att*C_att' + R_att);
     
+    P_resid = C_att*P_att*C_att' + R_att;
+    resid_x_unc = sqrt(P_resid(1,1));
+    resid_y_unc = sqrt(P_resid(2,2));
+    resid_z_unc = sqrt(P_resid(3,3));
+    resid = y_att-h_att;
     % Covariance matrix updated with measurement information
     I_att = eye(size(P_att));
     P_att = (I_att - L_att*C_att)*P_att; 
     P_att = real(.5*P_att + .5*P_att'); % Make sure P stays real and symmetric
-    xhat_att = xhat_att + L_att*(ymeas_att-h_att); % States updated with measurement information
+    xhat_att = xhat_att + L_att*(y_att-h_att); % States updated with measurement information
     xhat_att = mod(xhat_att+pi,2*pi)-pi; % xhat_att are attitudes, make sure they stay within +/-180degrees 
     phi_hat   = xhat_att(1);
     theta_hat = xhat_att(2);
@@ -217,12 +222,12 @@ function out = uavsim_estimates(uu,P)
             we_hat;...    % 15
             phi_unc;...   % 16
             theta_unc;... % 17
-            0; % future use
-            0; % future use
-            0; % future use
-            0; % future use
-            0; % future use
-            0; % future use
+            resid(1); % future use
+            resid(2); % future use
+            resid(3); % future use
+            resid_x_unc; % future use
+            resid_y_unc; % future use
+            resid_z_unc; % future use
         ]; % Length: 23
     
 end 
